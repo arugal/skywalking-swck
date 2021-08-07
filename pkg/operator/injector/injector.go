@@ -30,8 +30,23 @@ import (
 )
 
 const (
-	annotationKeyagentInjector = "swck-agent-injected"
+	annotationKeyAgentInjector    = "swck-agent-injected"
+	annotationKeyAgentImage       = "swck-agent-image"
+	annotationKeyServiceNameLabel = "swck-agent-service-name-label"
+	annotationKeyOapServerAddress = "swck-agent-oap-server-address"
+	annotationKeyInjectEnv        = "swck-agent-inject-env"
 )
+
+type Annotations struct {
+	annotations map[string]string
+}
+
+func (a Annotations) getOrDefault(key, defaultV string) string {
+	if value, ok := a.annotations[key]; ok {
+		return value
+	}
+	return defaultV
+}
 
 // PodInjector injects agent into Pods
 type PodInjector struct {
@@ -82,10 +97,10 @@ func needInject(pod *corev1.Pod) bool {
 
 	labels := pod.ObjectMeta.Labels
 	if labels == nil {
-		return injected
+		return false
 	}
 
-	switch strings.ToLower(labels[annotationKeyagentInjector]) {
+	switch strings.ToLower(labels[annotationKeyAgentInjector]) {
 	case "true":
 		injected = true
 	}
@@ -102,10 +117,14 @@ func addAgent(pod *corev1.Pod) {
 		Name:      "sky-agent",
 	}
 
+	annotations := Annotations{
+		annotations: pod.ObjectMeta.Annotations,
+	}
+
 	// set the agent image to be injected
 	needAddInitContainer := corev1.Container{
 		Name:         "inject-sky-agent",
-		Image:        "apache/skywalking-java-agent:8.6.0-jdk8",
+		Image:        annotations.getOrDefault(annotationKeyAgentImage, "apache/skywalking-java-agent:8.6.0-jdk8"),
 		Command:      []string{"sh"},
 		Args:         []string{"-c", "mkdir -p /sky/agent && cp -r /skywalking/agent/* /sky/agent"},
 		VolumeMounts: []corev1.VolumeMount{vm},
@@ -124,10 +143,37 @@ func addAgent(pod *corev1.Pod) {
 	}
 
 	// set container's EnvVar
-	needAddEnv := corev1.EnvVar{
-		Name:  "AGENT_OPTS",
+	var needAddEnvs []corev1.EnvVar
+
+	// agent opts
+	agentOpts := corev1.EnvVar{
+		Name:  annotations.getOrDefault(annotationKeyInjectEnv, "AGENT_OPTS"),
 		Value: " -javaagent:/sky/agent/skywalking-agent.jar",
 	}
+	needAddEnvs = append(needAddEnvs, agentOpts)
+
+	// service name
+	var swAgentName string
+	if label, ok := pod.ObjectMeta.Labels[annotations.getOrDefault(annotationKeyServiceNameLabel, "app")]; ok && label != "" {
+		swAgentName = label
+	} else {
+		swAgentName = pod.Name
+	}
+
+	if swAgentName != "" {
+		serviceName := corev1.EnvVar{
+			Name:  "SW_AGENT_NAME",
+			Value: swAgentName,
+		}
+		needAddEnvs = append(needAddEnvs, serviceName)
+	}
+
+	// oap server address
+	oapServerAddress := corev1.EnvVar{
+		Name:  "SW_AGENT_COLLECTOR_BACKEND_SERVICES",
+		Value: annotations.getOrDefault(annotationKeyOapServerAddress, "127.0.0.1:11800"),
+	}
+	needAddEnvs = append(needAddEnvs, oapServerAddress)
 
 	// add VolumeMount to spec
 	if pod.Spec.Volumes != nil {
@@ -136,7 +182,7 @@ func addAgent(pod *corev1.Pod) {
 		pod.Spec.Volumes = []corev1.Volume{needAddVolumes}
 	}
 
-	// add InitContrainers to spec
+	// add InitContainers to spec
 	if pod.Spec.InitContainers != nil {
 		pod.Spec.InitContainers = append(pod.Spec.InitContainers, needAddInitContainer)
 	} else {
@@ -146,6 +192,6 @@ func addAgent(pod *corev1.Pod) {
 	// add VolumeMount and env to every container
 	for i := 0; i < len(pod.Spec.Containers); i++ {
 		pod.Spec.Containers[i].VolumeMounts = append(pod.Spec.Containers[i].VolumeMounts, needAddVolumeMount)
-		pod.Spec.Containers[i].Env = append(pod.Spec.Containers[i].Env, needAddEnv)
+		pod.Spec.Containers[i].Env = append(pod.Spec.Containers[i].Env, needAddEnvs...)
 	}
 }

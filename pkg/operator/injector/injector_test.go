@@ -81,10 +81,21 @@ func Test_needInject(t *testing.T) {
 
 func Test_addAgent(t *testing.T) {
 	type args struct {
-		pod *corev1.Pod
+		pod     *corev1.Pod
+		wantPod *corev1.Pod
 	}
 
 	Pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "app",
+			Annotations: map[string]string{
+				"swck-agent-oap-server-address": "127.0.0.2:11800",
+				"swck-agent-service-name-label": "app",
+			},
+			Labels: map[string]string{
+				"app": "test1",
+			},
+		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
 				corev1.Container{
@@ -127,7 +138,27 @@ func Test_addAgent(t *testing.T) {
 		Value: " -javaagent:/sky/agent/skywalking-agent.jar",
 	}
 
+	injectedServiceName := corev1.EnvVar{
+		Name:  "SW_AGENT_NAME",
+		Value: "test1",
+	}
+
+	injectdOapServerAddress := corev1.EnvVar{
+		Name:  "SW_AGENT_COLLECTOR_BACKEND_SERVICES",
+		Value: "127.0.0.2:11800",
+	}
+
 	injectedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "app",
+			Labels: map[string]string{
+				"app": "test1",
+			},
+			Annotations: map[string]string{
+				"swck-agent-oap-server-address": "127.0.0.2:11800",
+				"swck-agent-service-name-label": "app",
+			},
+		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
 				corev1.Container{
@@ -137,6 +168,8 @@ func Test_addAgent(t *testing.T) {
 					},
 					Env: []corev1.EnvVar{
 						injectedEV,
+						injectedServiceName,
+						injectdOapServerAddress,
 					},
 				},
 			},
@@ -154,14 +187,14 @@ func Test_addAgent(t *testing.T) {
 	}{
 		{
 			name: "test injected",
-			args: args{Pod},
+			args: args{pod: Pod, wantPod: injectedPod},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			addAgent(tt.args.pod)
-			if !reflect.DeepEqual(Pod, tt.args.pod) {
-				t.Errorf("needInject() = %v, want %v end", Pod, injectedPod)
+			if !reflect.DeepEqual(tt.args.wantPod, tt.args.pod) {
+				t.Errorf("needInject() = %v, want %v end", tt.args.wantPod, tt.args.pod)
 			}
 		})
 	}
