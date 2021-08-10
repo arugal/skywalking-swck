@@ -20,6 +20,7 @@ package injector
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -150,7 +151,6 @@ func addAgent(pod *corev1.Pod) {
 		Name:  annotations.getOrDefault(annotationKeyInjectEnv, "AGENT_OPTS"),
 		Value: " -javaagent:/sky/agent/skywalking-agent.jar",
 	}
-	needAddEnvs = append(needAddEnvs, agentOpts)
 
 	// service name
 	var swAgentName string
@@ -193,5 +193,22 @@ func addAgent(pod *corev1.Pod) {
 	for i := 0; i < len(pod.Spec.Containers); i++ {
 		pod.Spec.Containers[i].VolumeMounts = append(pod.Spec.Containers[i].VolumeMounts, needAddVolumeMount)
 		pod.Spec.Containers[i].Env = append(pod.Spec.Containers[i].Env, needAddEnvs...)
+
+		// append if the env variable already exist
+		alreadyExist := false
+		envs := pod.Spec.Containers[i].Env
+		for ii := 0; ii < len(envs); ii++ {
+			env := envs[ii]
+			if env.Name == agentOpts.Name {
+				env.Value = fmt.Sprintf("%s %s", env.Value, agentOpts.Value)
+				envs[ii] = env
+				alreadyExist = true
+				break
+			}
+		}
+
+		if !alreadyExist {
+			pod.Spec.Containers[i].Env = append(pod.Spec.Containers[i].Env, agentOpts)
+		}
 	}
 }

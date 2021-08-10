@@ -91,6 +91,7 @@ func Test_addAgent(t *testing.T) {
 			Annotations: map[string]string{
 				"swck-agent-oap-server-address": "127.0.0.2:11800",
 				"swck-agent-service-name-label": "app",
+				"swck-agent-inject-env":         "JAVA_OPTS",
 			},
 			Labels: map[string]string{
 				"app": "test1",
@@ -100,6 +101,12 @@ func Test_addAgent(t *testing.T) {
 			Containers: []corev1.Container{
 				corev1.Container{
 					Name: "app",
+					Env: []corev1.EnvVar{
+						{
+							Name:  "JAVA_OPTS",
+							Value: "-server",
+						},
+					},
 				},
 			},
 		},
@@ -134,8 +141,8 @@ func Test_addAgent(t *testing.T) {
 
 	// injected Container's EnvVar
 	injectedEV := corev1.EnvVar{
-		Name:  "AGENT_OPTS",
-		Value: " -javaagent:/sky/agent/skywalking-agent.jar",
+		Name:  "JAVA_OPTS",
+		Value: "-server  -javaagent:/sky/agent/skywalking-agent.jar",
 	}
 
 	injectedServiceName := corev1.EnvVar{
@@ -157,6 +164,7 @@ func Test_addAgent(t *testing.T) {
 			Annotations: map[string]string{
 				"swck-agent-oap-server-address": "127.0.0.2:11800",
 				"swck-agent-service-name-label": "app",
+				"swck-agent-inject-env":         "JAVA_OPTS",
 			},
 		},
 		Spec: corev1.PodSpec{
